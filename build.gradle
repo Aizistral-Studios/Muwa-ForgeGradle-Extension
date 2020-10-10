@@ -1,0 +1,50 @@
+plugins {
+    id 'java'
+    id 'com.gradle.plugin-publish' version '0.12.0'
+    id 'java-gradle-plugin'
+}
+
+group 'muwa.forgegradle'
+version '1.0-SNAPSHOT'
+archivesBaseName = 'muwa-forgegradle'
+
+repositories {
+    mavenCentral()
+    jcenter()
+}
+
+configurations {
+    embed
+}
+
+dependencies {
+    compile gradleApi();
+    compile files('lib/BON-2.4.0.15-all.jar')
+    embed files('lib/BON-2.4.0.15-all.jar')
+}
+
+jar {
+    from configurations.embed.collect { it.isDirectory() ? it : zipTree(it).matching { exclude 'META-INF/**' } }
+}
+
+gradlePlugin {
+    plugins {
+        muwafg {
+            id = 'muwa.forgegradle.muwafg'
+            implementationClass = 'muwa.forgegradle.MuwaFG'
+        }
+    }
+}
+
+pluginBundle {
+    website = 'https://github.com/Workbenc61/Muwa-ForgeGradle-Extension'
+    vcsUrl = 'https://github.com/Workbenc61/Muwa-ForgeGradle-Extension'
+    description = 'Muwa ForgeGradle extension. Targeting legacy support.'
+    tags = ['minecraft', 'minecraftforge', 'forgegradle']
+
+    plugins {
+        muwafg {
+            displayName = 'Muwa ForgeGradle Extension'
+        }
+    }
+}

@@ -53,6 +53,6 @@ public class MappingsInfo {
         if (mappingsChannel == null)
             return apiVersion;
         else
-            return mappingsChannel + "_" + customVersion == null ? mappingsVersion + "" : customVersion;
+            return mappingsChannel + "_" + (customVersion == null ? mappingsVersion + "" : customVersion);
     }
 }

@@ -5,6 +5,10 @@ Mainly targeting extended support for legacy versions (1.7.10).
 
 It will work with 1.7.10.
 
+```
+apply plugin: 'muwafg'
+```
+
 ### Deobfuscated Dependencies
 Support for deobfuscated dependencies like in FG-3
 ```

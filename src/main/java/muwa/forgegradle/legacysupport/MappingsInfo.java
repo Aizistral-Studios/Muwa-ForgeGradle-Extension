@@ -3,7 +3,6 @@ package muwa.forgegradle.legacysupport;
 import org.gradle.api.Project;
 
 import java.lang.reflect.Field;
-import java.nio.file.Paths;
 
 public class MappingsInfo {
     private String mappingsChannel;

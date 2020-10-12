@@ -1,12 +1,11 @@
 plugins {
     id 'java'
-    id 'com.gradle.plugin-publish' version '0.12.0'
-    id 'java-gradle-plugin'
+    id 'maven-publish'
 }
 
 group 'muwa.forgegradle'
 version '1.0.1-SNAPSHOT'
-archivesBaseName = 'muwa-forgegradle'
+archivesBaseName = project.name
 
 repositories {
     mavenCentral()
@@ -18,7 +17,7 @@ configurations {
 }
 
 dependencies {
-    compile gradleApi();
+    compile gradleApi()
     compile files('lib/BON-2.4.0.15-all.jar')
     embed files('lib/BON-2.4.0.15-all.jar')
 }
@@ -27,24 +26,33 @@ jar {
     from configurations.embed.collect { it.isDirectory() ? it : zipTree(it).matching { exclude 'META-INF/**' } }
 }
 
-gradlePlugin {
-    plugins {
-        muwafg {
-            id = 'muwa.forgegradle.muwafg'
-            implementationClass = 'muwa.forgegradle.MuwaFG'
-        }
-    }
+task sourceJar(type: Jar) {
+    from sourceSets.main.allJava
+    archiveClassifier = "sources"
 }
 
-pluginBundle {
-    website = 'https://github.com/Workbenc61/Muwa-ForgeGradle-Extension'
-    vcsUrl = 'https://github.com/Workbenc61/Muwa-ForgeGradle-Extension'
-    description = 'Muwa ForgeGradle extension. Targeting legacy support.'
-    tags = ['minecraft', 'minecraftforge', 'forgegradle']
-
-    plugins {
-        muwafg {
-            displayName = 'Muwa ForgeGradle Extension'
+publishing {
+    repositories {
+        maven {
+            name = 'projectLocal'
+            url = project.file('repo')
+        }
+        mavenLocal()
+    }
+    publications {
+        java(MavenPublication) {
+            from components.java
+            artifact sourceJar
+            pom {
+                description = 'Gradle plugin to use alongside ForgeGradle'
+                url = 'https://github.com/Workbench61/Muwa-ForgeGradle-Extension'
+                developers {
+                    developer {
+                        id = 'muwa'
+                        email = 'workbench.mods@gmail.com'
+                    }
+                }
+            }
         }
     }
 }

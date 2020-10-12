@@ -1,26 +1,36 @@
 package muwa.forgegradle.legacysupport;
 
-import com.github.parker8283.bon2.BON2Impl;
-import com.github.parker8283.bon2.cli.CLIProgressListener;
-import com.github.parker8283.bon2.data.MappingVersion;
 import muwa.forgegradle.util.HashFunction;
+import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ResolvedConfiguration;
+import org.gradle.api.tasks.JavaExec;
+import sun.misc.IOUtils;
 
+import javax.net.ssl.HttpsURLConnection;
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collections;
+import java.util.jar.Attributes;
+import java.util.jar.JarFile;
 
 public class Remapper {
     private final Configuration origin;
     private final Path cachePath;
+    private final Project project;
+    private static int index = 0;
 
-    public Remapper(Configuration origin, Path cachePath) {
+    public Remapper(Configuration origin, Path cachePath, Project project) {
         this.origin = origin;
         this.cachePath = cachePath;
+        this.project = project;
     }
 
     public void remap(String mappings, File mappingsDir) {
@@ -83,8 +93,38 @@ public class Remapper {
                         try {
                             Files.createDirectories(deobfPath.getParent());
                             System.out.println("remapping " + art + " with mappings " + mappings);
-                            BON2Impl.remap(art.getFile(), deobfPath.toFile(), new MappingVersion(mappings, mappingsDir), (s, b) -> true, new CLIProgressListener());
-                        } catch (IOException e) {
+
+                            Path bonPath = cachePath.resolve("bon2.jar");
+
+                            if (!Files.exists(bonPath)) {
+                                System.out.println("Downloading BON-2.4.0.15");
+                                HttpsURLConnection con;
+                                try {
+                                    con = (HttpsURLConnection) new URL("https://ci.tterrag.com/job/BON2/15/artifact/build/libs/BON-2.4.0.15-all.jar").openConnection();
+                                } catch (IOException e) {
+                                    System.out.println("trying github link");
+                                    // when in 100 (one hundred) years tterrag's site finally goes down it will still hopefully be on github....
+                                    con = (HttpsURLConnection) new URL("https://github.com/Workbench61/Muwa-ForgeGradle-Extension/tree/master/lib/BON-2.4.0.15-all.jar").openConnection();
+                                }
+
+                                Files.createDirectories(cachePath);
+                                Files.write(bonPath, IOUtils.readAllBytes(con.getInputStream()));
+                                con.disconnect();
+                                System.out.println("Done Downloading BON-2.4.0.15");
+                            }
+
+                            URLClassLoader loader = new URLClassLoader(new URL[]{bonPath.toUri().toURL()});
+                            Class<?> impl = loader.loadClass("com.github.parker8283.bon2.BON2Impl");
+                            Class<?> mappingsVersion = loader.loadClass("com.github.parker8283.bon2.data.MappingVersion");
+                            Constructor<?> mappingsVersionConstructor = mappingsVersion.getDeclaredConstructor(String.class, File.class);
+                            Constructor<?> errorHandler = loader.loadClass("com.github.parker8283.bon2.cli.CLIErrorHandler").getDeclaredConstructor();
+                            Constructor<?> progressListener = loader.loadClass("com.github.parker8283.bon2.cli.CLIProgressListener").getDeclaredConstructor();
+
+                            impl.getDeclaredMethod("remap", File.class, File.class, mappingsVersion, loader.loadClass("com.github.parker8283.bon2.data.IErrorHandler"), loader.loadClass("com.github.parker8283.bon2.data.IProgressListener"))
+                                    .invoke(null, art.getFile(), deobfPath.toFile(), mappingsVersionConstructor.newInstance(mappings, mappingsDir), errorHandler.newInstance(), progressListener.newInstance());
+
+                            loader.close();
+                        } catch (IOException | ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
                             e.printStackTrace();
                         }
                     }

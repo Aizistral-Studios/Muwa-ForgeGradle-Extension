@@ -4,7 +4,7 @@ plugins {
 }
 
 group 'muwa.forgegradle'
-version '1.0.1-SNAPSHOT'
+version '1.0'
 archivesBaseName = project.name
 
 repositories {
@@ -12,23 +12,13 @@ repositories {
     jcenter()
 }
 
-configurations {
-    embed
-}
-
 dependencies {
     compile gradleApi()
-    compile files('lib/BON-2.4.0.15-all.jar')
-    embed files('lib/BON-2.4.0.15-all.jar')
-}
-
-jar {
-    from configurations.embed.collect { it.isDirectory() ? it : zipTree(it).matching { exclude 'META-INF/**' } }
 }
 
 task sourceJar(type: Jar) {
     from sourceSets.main.allJava
-    archiveClassifier = "sources"
+    classifier = "sources"
 }
 
 publishing {

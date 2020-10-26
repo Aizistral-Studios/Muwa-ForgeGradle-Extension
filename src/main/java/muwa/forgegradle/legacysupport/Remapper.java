@@ -4,7 +4,6 @@ import muwa.forgegradle.util.HashFunction;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ResolvedConfiguration;
-import org.gradle.api.tasks.JavaExec;
 import sun.misc.IOUtils;
 
 import javax.net.ssl.HttpsURLConnection;
@@ -18,19 +17,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collections;
-import java.util.jar.Attributes;
-import java.util.jar.JarFile;
 
 public class Remapper {
     private final Configuration origin;
     private final Path cachePath;
-    private final Project project;
-    private static int index = 0;
 
     public Remapper(Configuration origin, Path cachePath, Project project) {
         this.origin = origin;
         this.cachePath = cachePath;
-        this.project = project;
     }
 
     public void remap(String mappings, File mappingsDir) {
@@ -47,11 +41,8 @@ public class Remapper {
         resolvedOrigin.getFirstLevelModuleDependencies()
             .forEach(dep -> {
                 Path base;
-                boolean flat = false;
-                if (dep.getModuleGroup() == null || dep.getModuleGroup().isEmpty() || dep.getModuleVersion() == null || dep.getModuleVersion().isEmpty()) {
+                if (dep.getModuleGroup() == null || dep.getModuleGroup().isEmpty() || dep.getModuleVersion() == null || dep.getModuleVersion().isEmpty())
                     base = Paths.get("flatRepo");
-                    flat = true;
-                }
                 else
                     base = Paths.get(
                         "repo",
@@ -60,7 +51,6 @@ public class Remapper {
                         dep.getModuleVersion() == null ? "" : dep.getModuleVersion()
                     );
 
-                boolean flatRepo = flat;
                 dep.getAllModuleArtifacts().forEach(art -> {
                     Path hashPath = cachePath.resolve("hashes")
                             .resolve(base)
@@ -87,7 +77,7 @@ public class Remapper {
 
                     Path deobfPath = cachePath
                             .resolve(base)
-                            .resolve((flatRepo ? prefix : "") + art.getFile().getName());
+                            .resolve((prefix) + art.getFile().getName());
 
                     if (!Files.exists(deobfPath) || !sameHash) {
                         try {

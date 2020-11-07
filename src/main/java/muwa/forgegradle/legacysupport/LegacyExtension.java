@@ -15,7 +15,7 @@ public class LegacyExtension {
                 "caches", "muwa_forge_gradle"
         );
         Remapper remapper = new Remapper(configuration, cachePath, project);
-        project.getExtensions().create(DepExtension.EXTENSION_NAME, DepExtension.class, project);
+        project.getExtensions().create(DepExtension.EXTENSION_NAME, DepExtension.class, project, remapper);
 
         project.getRepositories().maven(repo -> {
             repo.setUrl(cachePath.resolve("repo").toUri());

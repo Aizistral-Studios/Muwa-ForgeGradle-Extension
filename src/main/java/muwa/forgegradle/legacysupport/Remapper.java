@@ -3,7 +3,9 @@ package muwa.forgegradle.legacysupport;
 import muwa.forgegradle.util.HashFunction;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.artifacts.ResolvedConfiguration;
+import org.gradle.api.tasks.JavaExec;
 import sun.misc.IOUtils;
 
 import javax.net.ssl.HttpsURLConnection;
@@ -16,15 +18,22 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.jar.Attributes;
+import java.util.jar.JarFile;
 
 public class Remapper {
     private final Configuration origin;
     private final Path cachePath;
+    private final Project project;
+    public boolean decompile = true;
+    private static int index;
 
     public Remapper(Configuration origin, Path cachePath, Project project) {
         this.origin = origin;
         this.cachePath = cachePath;
+        this.project = project;
     }
 
     public void remap(String mappings, File mappingsDir) {
@@ -38,87 +47,142 @@ public class Remapper {
             e.printStackTrace();
         }
 
-        resolvedOrigin.getFirstLevelModuleDependencies()
-            .forEach(dep -> {
-                Path base;
-                if (dep.getModuleGroup() == null || dep.getModuleGroup().isEmpty() || dep.getModuleVersion() == null || dep.getModuleVersion().isEmpty())
-                    base = Paths.get("flatRepo");
-                else
-                    base = Paths.get(
-                        "repo",
-                        dep.getModuleGroup() == null ? "" : dep.getModuleGroup().replace('.', File.pathSeparatorChar),
-                        prefix + dep.getModuleName(),
-                        dep.getModuleVersion() == null ? "" : dep.getModuleVersion()
-                    );
+        final File forgeFlower;
+        if (decompile) {
+            final Configuration c = project.getConfigurations().maybeCreate("__forgeflower");
+            c.getDependencies().add(project.getDependencies().create("net.minecraftforge:forgeflower:1.+"));
+            final ResolvedConfiguration origin = c.getResolvedConfiguration();
+            forgeFlower = origin.getFirstLevelModuleDependencies()
+                    .stream()
+                    .flatMap(resolvedDependency -> resolvedDependency.getAllModuleArtifacts().stream())
+                    .findFirst()
+                    .map(ResolvedArtifact::getFile)
+                    .orElseThrow(() -> new RuntimeException("ForgeFlower not found!"));
+        }
+        else {
+            forgeFlower = null;
+        }
 
-                dep.getAllModuleArtifacts().forEach(art -> {
-                    Path hashPath = cachePath.resolve("hashes")
-                            .resolve(base)
-                            .resolve(art.getFile().getName() + ".md5");
+        URLClassLoader loader = null;
+        try {
+            Path bonPath = cachePath.resolve("bon2.jar");
 
-                    boolean sameHash = false;
+            if (!Files.exists(bonPath)) {
+                System.out.println("Downloading BON-2.4.0.15");
+                HttpsURLConnection con;
+                try {
+                    con = (HttpsURLConnection) new URL("https://ci.tterrag.com/job/BON2/15/artifact/build/libs/BON-2.4.0.15-all.jar").openConnection();
+                } catch (IOException e) {
+                    System.out.println("trying github link");
+                    // when in 100 (one hundred) years tterrag's site finally goes down it will still hopefully be on github....
+                    con = (HttpsURLConnection) new URL("https://github.com/Workbench61/Muwa-ForgeGradle-Extension/tree/master/lib/BON-2.4.0.15-all.jar").openConnection();
+                }
 
-                    if (Files.exists(hashPath)) {
-                        try {
-                            sameHash = HashFunction.MD5.hash(art.getFile()).equals(Files.readAllLines(hashPath).get(0));
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                    else {
-                        try {
-                            sameHash = false;
-                            Files.createDirectories(hashPath.getParent());
-                            Files.write(hashPath, Collections.singletonList(HashFunction.MD5.hash(art.getFile())));
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                    }
+                Files.createDirectories(cachePath);
+                Files.write(bonPath, IOUtils.readAllBytes(con.getInputStream()));
+                con.disconnect();
+                System.out.println("Done Downloading BON-2.4.0.15");
+            }
 
-                    Path deobfPath = cachePath
-                            .resolve(base)
-                            .resolve((prefix) + art.getFile().getName());
+            loader = new URLClassLoader(new URL[]{bonPath.toUri().toURL()});
+            Class<?> impl = loader.loadClass("com.github.parker8283.bon2.BON2Impl");
+            Class<?> mappingsVersion = loader.loadClass("com.github.parker8283.bon2.data.MappingVersion");
+            Constructor<?> mappingsVersionConstructor = mappingsVersion.getDeclaredConstructor(String.class, File.class);
+            Constructor<?> errorHandler = loader.loadClass("com.github.parker8283.bon2.cli.CLIErrorHandler").getDeclaredConstructor();
+            Constructor<?> progressListener = loader.loadClass("com.github.parker8283.bon2.cli.CLIProgressListener").getDeclaredConstructor();
 
-                    if (!Files.exists(deobfPath) || !sameHash) {
-                        try {
-                            Files.createDirectories(deobfPath.getParent());
-                            System.out.println("remapping " + art + " with mappings " + mappings);
+            URLClassLoader finalLoader = loader;
+            resolvedOrigin.getFirstLevelModuleDependencies()
+                    .forEach(dep -> {
+                        final Path base;
+                        if (dep.getModuleGroup() == null || dep.getModuleGroup().isEmpty() || dep.getModuleVersion() == null || dep.getModuleVersion().isEmpty())
+                            base = Paths.get("flatRepo");
+                        else
+                            base = Paths.get(
+                                    "repo",
+                                    dep.getModuleGroup() == null ? "" : dep.getModuleGroup().replace('.', File.separatorChar),
+                                    prefix + dep.getModuleName(),
+                                    dep.getModuleVersion() == null ? "" : dep.getModuleVersion()
+                            );
 
-                            Path bonPath = cachePath.resolve("bon2.jar");
+                        dep.getAllModuleArtifacts().forEach(art -> {
+                            if (!art.getExtension().equals("jar"))
+                                return;
 
-                            if (!Files.exists(bonPath)) {
-                                System.out.println("Downloading BON-2.4.0.15");
-                                HttpsURLConnection con;
+                            Path hashPath = cachePath.resolve("hashes")
+                                    .resolve(base)
+                                    .resolve(art.getFile().getName() + ".md5");
+
+                            boolean sameHash = false;
+
+                            if (Files.exists(hashPath)) {
                                 try {
-                                    con = (HttpsURLConnection) new URL("https://ci.tterrag.com/job/BON2/15/artifact/build/libs/BON-2.4.0.15-all.jar").openConnection();
+                                    sameHash = HashFunction.MD5.hash(art.getFile()).equals(Files.readAllLines(hashPath).get(0));
                                 } catch (IOException e) {
-                                    System.out.println("trying github link");
-                                    // when in 100 (one hundred) years tterrag's site finally goes down it will still hopefully be on github....
-                                    con = (HttpsURLConnection) new URL("https://github.com/Workbench61/Muwa-ForgeGradle-Extension/tree/master/lib/BON-2.4.0.15-all.jar").openConnection();
+                                    e.printStackTrace();
                                 }
-
-                                Files.createDirectories(cachePath);
-                                Files.write(bonPath, IOUtils.readAllBytes(con.getInputStream()));
-                                con.disconnect();
-                                System.out.println("Done Downloading BON-2.4.0.15");
+                            } else {
+                                try {
+                                    Files.createDirectories(hashPath.getParent());
+                                    Files.write(hashPath, Collections.singletonList(HashFunction.MD5.hash(art.getFile())));
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
                             }
 
-                            URLClassLoader loader = new URLClassLoader(new URL[]{bonPath.toUri().toURL()});
-                            Class<?> impl = loader.loadClass("com.github.parker8283.bon2.BON2Impl");
-                            Class<?> mappingsVersion = loader.loadClass("com.github.parker8283.bon2.data.MappingVersion");
-                            Constructor<?> mappingsVersionConstructor = mappingsVersion.getDeclaredConstructor(String.class, File.class);
-                            Constructor<?> errorHandler = loader.loadClass("com.github.parker8283.bon2.cli.CLIErrorHandler").getDeclaredConstructor();
-                            Constructor<?> progressListener = loader.loadClass("com.github.parker8283.bon2.cli.CLIProgressListener").getDeclaredConstructor();
+                            Path deobfPath = cachePath
+                                    .resolve(base)
+                                    .resolve((prefix) + art.getFile().getName());
 
-                            impl.getDeclaredMethod("remap", File.class, File.class, mappingsVersion, loader.loadClass("com.github.parker8283.bon2.data.IErrorHandler"), loader.loadClass("com.github.parker8283.bon2.data.IProgressListener"))
-                                    .invoke(null, art.getFile(), deobfPath.toFile(), mappingsVersionConstructor.newInstance(mappings, mappingsDir), errorHandler.newInstance(), progressListener.newInstance());
+                            Path sourcesPath = cachePath
+                                    .resolve(base)
+                                    .resolve(prefix + art.getFile().getName().replace(".jar", "-sources.jar"));
 
-                            loader.close();
-                        } catch (IOException | ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                });
-            });
+                            boolean redoDecompile = false;
+                            if (!Files.exists(deobfPath) || !sameHash) {
+                                redoDecompile = true;
+                                try {
+                                    Files.createDirectories(deobfPath.getParent());
+                                    System.out.println("remapping " + art + " with mappings " + mappings);
+
+                                    impl.getDeclaredMethod("remap", File.class, File.class, mappingsVersion, finalLoader.loadClass("com.github.parker8283.bon2.data.IErrorHandler"), finalLoader.loadClass("com.github.parker8283.bon2.data.IProgressListener"))
+                                            .invoke(null, art.getFile(), deobfPath.toFile(), mappingsVersionConstructor.newInstance(mappings, mappingsDir), errorHandler.newInstance(), progressListener.newInstance());
+
+                                } catch (IOException | ClassNotFoundException | NoSuchMethodException | InstantiationException | IllegalAccessException | InvocationTargetException e) {
+                                    e.printStackTrace();
+                                }
+                            }
+
+                            if (decompile && (!Files.exists(sourcesPath) || redoDecompile)) {
+                                final JavaExec javaExec = project.getTasks().create("_decompile_" + index++, JavaExec.class);
+                                try {
+                                    try (JarFile jarFile = new JarFile(forgeFlower)) {
+                                        javaExec.setMain(jarFile.getManifest().getMainAttributes().getValue(Attributes.Name.MAIN_CLASS));
+                                    } catch (IOException e) {
+                                        e.printStackTrace();
+                                    }
+                                    javaExec.classpath(forgeFlower);
+                                    javaExec.setArgs(Arrays.asList(deobfPath.toString(), sourcesPath.toString()));
+                                    javaExec.exec();
+                                } finally {
+                                    project.getTasks().remove(javaExec);
+                                }
+                            }
+                        });
+                    });
+
+            loader.close();
+        } catch (NoSuchMethodException | IOException | ClassNotFoundException e) {
+            e.printStackTrace();
+        }
+        finally {
+            if (loader != null) {
+                try {
+                    loader.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
     }
 }

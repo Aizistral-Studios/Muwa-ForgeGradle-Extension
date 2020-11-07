@@ -1,44 +1,67 @@
 package muwa.forgegradle.legacysupport;
 
 import groovy.lang.Closure;
-import muwa.forgegradle.MuwaFG;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.artifacts.ExternalModuleDependency;
 import org.gradle.api.artifacts.FileCollectionDependency;
-import org.gradle.api.internal.artifacts.dependencies.AbstractExternalModuleDependency;
 
-import java.lang.reflect.Field;
+import java.util.HashMap;
 
 public class DepExtension {
     public static final String EXTENSION_NAME = "muwafgdep";
     public static final String CONFIG_NAME = "__obfuscated";
 
     private final Project project;
+    private final Remapper remapper;
     private String prefix;
 
-    public DepExtension(Project project) {
+    public DepExtension(Project project, Remapper remapper) {
         this.project = project;
+        this.remapper = remapper;
+    }
+
+    public void decompile() {
+        remapper.decompile = true;
+    }
+
+    public void decompile(boolean value) {
+        remapper.decompile = value;
     }
 
     public Dependency deobf(Object descrition) {
-        return deobf(descrition, null);
+        return deobf(descrition, false, null);
     }
 
-    public Dependency deobf(Object description, Closure<?> configure) {
+    public Dependency deobf(Object descrition, Closure<?> configure) {
+        return deobf(descrition, false, configure);
+    }
+
+    public Dependency deobf(Object description, boolean ignoreCurseMaven, Closure<?> configure) {
         Dependency dependency = project.getDependencies().create(description, configure);
         project.getConfigurations().getByName(CONFIG_NAME).getDependencies().add(dependency);
 
         if (dependency instanceof ExternalModuleDependency) {
-            ExternalModuleDependency copy = (ExternalModuleDependency) dependency.copy();
-            try {
-                Field name = AbstractExternalModuleDependency.class.getDeclaredField("name");
-                name.setAccessible(true);
-                name.set(copy, getPrefix() + copy.getName());
-            } catch (NoSuchFieldException | IllegalAccessException e) {
-                project.getLogger().error("", e);
-                return dependency;
+//            ExternalModuleDependency copy = (ExternalModuleDependency) dependency.copy();
+            final HashMap<String, String> map = new HashMap<>();
+            map.put("name", getPrefix() + dependency.getName());
+            if (dependency.getGroup() != null && !dependency.getGroup().isEmpty()) {
+                if (ignoreCurseMaven || !dependency.getGroup().equals("curse.maven"))
+                    map.put("group", dependency.getGroup());
             }
+            if (dependency.getVersion() != null && !dependency.getVersion().isEmpty())
+                map.put("version", dependency.getVersion());
+            final ExternalModuleDependency copy = (ExternalModuleDependency) project.getDependencies().create(map, configure);
+            ((ExternalModuleDependency) dependency).getArtifacts().forEach(art -> {
+                copy.artifact(newArt -> {
+                    newArt.setName(getPrefix() + art.getName());
+                    newArt.setClassifier(art.getClassifier());
+                    newArt.setExtension(art.getExtension());
+                    newArt.setType(art.getType());
+                    newArt.setUrl(art.getUrl());
+                });
+            });
+
             return copy;
         }
 

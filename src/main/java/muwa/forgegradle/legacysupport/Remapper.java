@@ -15,6 +15,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -97,13 +98,33 @@ public class Remapper {
                         final Path base;
                         if (dep.getModuleGroup() == null || dep.getModuleGroup().isEmpty() || dep.getModuleVersion() == null || dep.getModuleVersion().isEmpty())
                             base = Paths.get("flatRepo");
-                        else
+                        else {
                             base = Paths.get(
                                     "repo",
                                     dep.getModuleGroup() == null ? "" : dep.getModuleGroup().replace('.', File.separatorChar),
                                     prefix + dep.getModuleName(),
                                     dep.getModuleVersion() == null ? "" : dep.getModuleVersion()
                             );
+                            if ("curse.maven".equals(dep.getModuleGroup())) {
+                                try {
+                                    Path pomPath = base.resolve(prefix + dep.getModuleName() + '-' + (dep.getModuleVersion() == null ? "" : dep.getModuleVersion()) + ".pom");
+                                    pomPath = cachePath.resolve(pomPath);
+                                    Files.createDirectories(pomPath.getParent());
+                                    Files.write(
+                                            pomPath,
+                                            ("<project xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd\">\n" +
+                                                    "<modelVersion>4.0.0</modelVersion>\n" +
+                                                    "<groupId>" + dep.getModuleGroup() + "</groupId>\n" +
+                                                    "<artifactId>" + prefix + dep.getModuleName() + "</artifactId>\n" +
+                                                    "<version>" + (dep.getModuleVersion() == null ? "" : dep.getModuleVersion()) + "</version>\n" +
+                                                    "</project>").getBytes(StandardCharsets.UTF_8)
+                                    );
+                                } catch (IOException e) {
+                                    e.printStackTrace();
+                                }
+                            }
+                        }
+
 
                         dep.getAllModuleArtifacts().forEach(art -> {
                             if (!art.getExtension().equals("jar"))

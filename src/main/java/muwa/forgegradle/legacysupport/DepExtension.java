@@ -29,26 +29,15 @@ public class DepExtension {
         remapper.decompile = value;
     }
 
-    public Dependency deobf(Object descrition) {
-        return deobf(descrition, false, null);
-    }
-
-    public Dependency deobf(Object descrition, Closure<?> configure) {
-        return deobf(descrition, false, configure);
-    }
-
-    public Dependency deobf(Object description, boolean ignoreCurseMaven, Closure<?> configure) {
+    public Dependency deobf(Object description, Closure<?> configure) {
         Dependency dependency = project.getDependencies().create(description, configure);
         project.getConfigurations().getByName(CONFIG_NAME).getDependencies().add(dependency);
 
         if (dependency instanceof ExternalModuleDependency) {
-//            ExternalModuleDependency copy = (ExternalModuleDependency) dependency.copy();
             final HashMap<String, String> map = new HashMap<>();
             map.put("name", getPrefix() + dependency.getName());
-            if (dependency.getGroup() != null && !dependency.getGroup().isEmpty()) {
-                if (ignoreCurseMaven || !dependency.getGroup().equals("curse.maven"))
-                    map.put("group", dependency.getGroup());
-            }
+            if (dependency.getGroup() != null && !dependency.getGroup().isEmpty())
+                map.put("group", dependency.getGroup());
             if (dependency.getVersion() != null && !dependency.getVersion().isEmpty())
                 map.put("version", dependency.getVersion());
             final ExternalModuleDependency copy = (ExternalModuleDependency) project.getDependencies().create(map, configure);

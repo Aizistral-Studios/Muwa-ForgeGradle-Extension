@@ -29,11 +29,16 @@ public class DepExtension {
         remapper.decompile = value;
     }
 
+    public Dependency deobf(Object descrition) {
+        return deobf(descrition, null);
+    }
+
     public Dependency deobf(Object description, Closure<?> configure) {
         Dependency dependency = project.getDependencies().create(description, configure);
         project.getConfigurations().getByName(CONFIG_NAME).getDependencies().add(dependency);
 
         if (dependency instanceof ExternalModuleDependency) {
+//            ExternalModuleDependency copy = (ExternalModuleDependency) dependency.copy();
             final HashMap<String, String> map = new HashMap<>();
             map.put("name", getPrefix() + dependency.getName());
             if (dependency.getGroup() != null && !dependency.getGroup().isEmpty())
